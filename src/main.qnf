@@ -1,0 +1,22 @@
+int item = 1;
+str server = "https://myserver.com Wtf test";
+str test = f"${server}/${item}";
+fn hi(String name) -> String {
+    println name;
+}
+Headers headers = {"Head-One": "1", HeadTwo: "2"};
+Cookies cookies = {"Cookie-One": "Value", CookieTwo: "2"};
+
+HttpOptions options = {Cert: "./pathToCerificate.cert"};
+
+Body body = jsonify({"key1": "key2"})
+
+HttpResponse response; // null
+
+http server, body, headers, cookies & options -> response;
+options = {Cookies: cookies};
+http server, body & options -> response;
+
+if (size(response.body) >= 100) {
+    raise error("")
+}
