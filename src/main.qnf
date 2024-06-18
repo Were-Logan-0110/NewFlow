@@ -1,17 +1,17 @@
-int item = 1;
-str server = "https://myserver.com Wtf test";
-str test = f"${server}/${item}";
-fn hi(String name) -> String {
+item = 1;
+server = "https://myserver.com Wtf test";
+test = f"${server}/${item}";
+fn hi(String name) {
     println name;
 }
-Headers headers = {"Head-One": "1", HeadTwo: "2"};
-Cookies cookies = {"Cookie-One": "Value", CookieTwo: "2"};
+headers = {"Head-One": "1", HeadTwo: "2"};
+cookies = {"Cookie-One": "Value", CookieTwo: "2"};
+arr = [1,3,56,65];
+options = {Cert: "./pathToCerificate.cert"};
 
-HttpOptions options = {Cert: "./pathToCerificate.cert"};
+body = jsonify({"key1": "key2"})
 
-Body body = jsonify({"key1": "key2"})
-
-HttpResponse response; // null
+response; // null
 
 http server, body, headers, cookies & options -> response;
 options = {Cookies: cookies};
