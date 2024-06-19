@@ -1,9 +1,8 @@
-from ast_ import Expr, Binary, Unary, Literal, Grouping, Stmt, Print, Expression, Var,Variable,Block,If
-from interpreter import Token, TokenType, report, error
+from interpreter import Token, TokenType, report
 from dataclasses import dataclass, field
 from helpers import SourceIterator
-
-
+from ast_.expression import *
+from numpy import array
 class ParseError(Exception):
     pass
 
@@ -31,45 +30,115 @@ class LLParser(SourceIterator):
             self.sync()
             return None
 
-    def statement(self) -> Stmt:
+    def statement(self) -> Stmt | None:
         if self.match(TokenType.IF): return self.ifStatement()
         if self.match(TokenType.PRINT):
             return self.printStatement()
+        if self.match(TokenType.WHILE):
+            return self.whileStatement()
+        if self.match(TokenType.FOR):
+            return self.forStatement()
         if self.match(TokenType.PRINTLN):
             return self.printStatement(True)
         if self.match(TokenType.LEFT_BRACE):
             return self.block()
+        if self.match(TokenType.FOR_EACH):
+            return self.foreachStatement()
+        if self.match(TokenType.BREAK):
+            return self.breakStatement()
+        if self.match(TokenType.CONTINUE):
+            return self.continueStatement()
         return self.expressionStatement()
-    def block(self) -> Stmt:
+    def breakStatement(self):
+        self.advance()
+        return Break()
+    def continueStatement(self):
+        self.advance()
+        return Continue()
+    def foreachStatement(self):
+        variable = None
+        if self.match(TokenType.IDENTIFIER):
+            variable = self.variable()
+            if self.match(TokenType.IN):
+                collection = self.expression()
+            else:
+                collection = variable
+                variable = None
+        else:
+            collection = self.expression()
+        if not self.check(TokenType.LEFT_BRACE):
+            report(self.previous().line, "", "Expect '{' after collection in foreach loop.")
+            exit(1)
+        else:
+            self.advance()
+        body = self.block(True)
+        return Foreach(collection, body, variable)
+    def block(self, stmtBlock:bool= False) -> Block:
         statements: list[Stmt | None] = []
         while (not self.check(TokenType.RIGHT_BRACE)) and (not self.isAtEnd()):
             statements.append(self.declaration())
         self.consume(TokenType.RIGHT_BRACE, "Expect '}' after block.")
-        return Block(statements) # type: ignore
+        return Block(statements,stmtBlock) # type: ignore
     def ifStatement(self) -> Stmt:
-        # self.consume(TokenType.LEFT_PAREN, "Expect '(' after 'if'.")
         condition: Expr = self.expression()
-        self.consume(TokenType.COLON, "Expect ':' after 'if'.")
-        thenBranch = self.statement()
+        self.consume(TokenType.LEFT_BRACE, "Expect '{' after 'if' condition.")
+        thenBranch = self.block(True)
         elseIfs: list[If] = []
         elseBranch = None
         while self.match(TokenType.ELSE_IF):
             _condition: Expr = self.expression()
-            self.consume(TokenType.COLON, "Expect ':' after 'if'.")
-            _thenBranch = self.statement()
-            elseIfs.append(If(_condition,_thenBranch,[],None))
+            self.consume(TokenType.LEFT_BRACE, "Expect '{' after 'else if' condition.")
+            _thenBranch = self.block(True)
+            elseIfs.append(If(_condition, _thenBranch, [], None))
+
         if self.match(TokenType.ELSE):
-            self.consume(TokenType.COLON, "Expect ':' after 'else'.")
-            elseBranch = self.statement()
-        return If(condition,thenBranch,elseIfs,elseBranch)
+            self.consume(TokenType.LEFT_BRACE, "Expect '{' after 'else'.")
+            elseBranch = self.block(True)
+
+        return If(condition, thenBranch, elseIfs, elseBranch)
+    def forStatement(self) -> Stmt | None:
+        self.consume(TokenType.LEFT_PAREN, "Expect '(' after 'for'.")
+        initializer: Stmt | None = None
+        if self.match(TokenType.SEMICOLON):
+            initializer = None
+        elif self.match(TokenType.IDENTIFIER):
+            initializer = self.varDeclaration()
+        else:
+            initializer = self.expressionStatement()
+        condition: Expr | None = None
+        if not self.check(TokenType.SEMICOLON):
+            condition = self.expression()
+        self.consume(TokenType.SEMICOLON,"Expect ';' after loop condition.")
+        increment: Expr | None = None
+        if not self.check(TokenType.RIGHT_PAREN):
+            increment = self.expression()
+        self.consume(TokenType.RIGHT_PAREN, "Expect ')' after for clauses.")
+        self.consume(TokenType.LEFT_BRACE, "Expect '{' after 'else if' condition.")
+        body = self.block(True)
+        if increment != None:
+            body = Block([*body.statements,Expression(increment)],True)
+        if condition == None: condition = Literal(True)
+        body = While(condition,body)
+        if initializer != None:
+            body = Block([initializer,body],True)
+        return body
+    def whileStatement(self) -> Stmt:
+        condition: Expr = self.expression()
+        self.consume(TokenType.LEFT_BRACE, "Expect '{' after 'while' condition.")
+        body: Stmt = self.block(True)
+        return While(condition, body)
+
     def varDeclaration(self):
         name: Token = self.previous()
         initializer: Expr | None | _UninitializedVar = _UninitializedVar()
         if self.match(TokenType.EQUAL):
             initializer = self.expression()
-        self.consume(TokenType.SEMICOLON, "Expect ';' after variable declaration.")
-        return Var(name, initializer)  # type: ignore
 
+        if isinstance(initializer, _UninitializedVar):
+            report(name.line,"","Variable must be initialized.")
+            exit(1)
+        self.consume(TokenType.SEMICOLON, "Expect ';' after variable declaration.")
+        return Var(name, initializer)
     def printStatement(self, newLine: bool = False) -> Stmt:
         value: Expr = self.expression()
         self.consume(TokenType.SEMICOLON, "Expect ';' after value.")
@@ -151,8 +220,18 @@ class LLParser(SourceIterator):
                 "Expected Enclosing parentheses ')' after expression.'",
             )
             return Grouping(expr)
+        if self.match(TokenType.LEFT_BRACKET):
+            return self.arrayLiteral()
         raise self.error(self.peek(), "Expect expression.")  # type: ignore
-
+    def arrayLiteral(self) -> Expr:
+        elements = []
+        if not self.check(TokenType.RIGHT_BRACKET):
+            while True:
+                elements.append(self.expression())
+                if (not self.match(TokenType.COMMA)):
+                    break
+        self.consume(TokenType.RIGHT_BRACKET, "Expect ']' after list elements.")
+        return Array(array(elements))
     def variable(self) -> Expr:
         name = self.previous()
         if self.match(TokenType.EQUAL):

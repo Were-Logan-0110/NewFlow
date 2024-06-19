@@ -1,6 +1,7 @@
 from dataclasses import dataclass,field
 from interpreter import Token,error
 from abc import ABC,abstractmethod
+from numpy import ndarray
 from typing import Final
 class Expr(ABC):
     @abstractmethod
@@ -28,6 +29,16 @@ class Literal(Expr):
     value: object
     def accept(self,visitor):
         return visitor.visitLiteralExpr(self)
+@dataclass
+class Array(Expr):
+    elements: ndarray[Expr]
+    def accept(self,visitor):
+        return visitor.visitArrayExpr(self)
+@dataclass
+class Index(Expr):
+    collection: Expr
+    index: Expr
+
 
 @dataclass
 class Unary(Expr):
@@ -59,6 +70,7 @@ class Var(Stmt):
 @dataclass
 class Block(Stmt):
     statements: list[Stmt]
+    stmtBlock: bool = False
     def accept(self,visitor):
         return visitor.visitBlockStmt(self)
 
@@ -67,10 +79,34 @@ class Block(Stmt):
 class If(Stmt):
     condition: Expr
     thenBranch: Stmt
-    elseIfs: "list[If]" = field(default_factory=[])
+    elseIfs: "list[If]" = field(default_factory=[]) # type: ignore
     elseBranch: Stmt | None = None
     def accept(self,visitor):
         return visitor.visitIfStmt(self)
+@dataclass
+class While(Stmt):
+    condition: Expr
+    body: Stmt
+    def accept(self, visitor):
+        return visitor.visitWhileStmt(self)
+@dataclass
+class For(Stmt):
+    initializer: Expression 
+@dataclass
+class Foreach(Stmt):
+    collections: Array
+    body: Stmt
+    variable: Variable | None = None
+    def accept(self,visitor):
+        return visitor.visitForeachStmt(self)
+@dataclass
+class Break(Stmt):
+    def accept(self,visitor):
+        return visitor.visitBreakStmt(self)
+@dataclass
+class Continue(Stmt):
+    def accept(self,visitor):
+        return visitor.visitContinueStmt(self)
 @dataclass
 class Print(Expression):
     newLine: bool = False

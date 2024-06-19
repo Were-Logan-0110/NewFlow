@@ -23,10 +23,25 @@ class ExprVisitor(Expr):
         pass
 class StmtVisitor(Expr):
     @abstractmethod
-    def visitExpressionStmt(self,expr:Stmt):
+    def visitExpressionStmt(self,expr: Expression):
         pass
     @abstractmethod
-    def visitPrintStmt(self,expr:Stmt):
+    def visitBlockStmt(self,expr: Block):
+        pass
+    @abstractmethod
+    def visitPrintStmt(self,expr: Print):
+        pass
+    @abstractmethod
+    def visitVarStmt(self,expr: Var):
+        pass
+    @abstractmethod
+    def visitVariableExpr(self,expr: Variable):
+        pass
+    @abstractmethod
+    def visitIfStmt(self,expr: If):
+        pass
+    @abstractmethod
+    def visitWhileStmt(self,expr: While):
         pass
 class AstPrinter(ExprVisitor):
     def accept(self):
@@ -61,6 +76,8 @@ class AstRPN(ExprVisitor):
         return f"({name} {' '.join([expr.accept(self) for expr in args])})"
 class ASTInterpreter(ExprVisitor,StmtVisitor):
     environment: Environment = Environment({})
+    loopBroken: bool = False
+    continueEmit: bool = False
     def accept(self, visitor):
         return super().accept(visitor)
     def interpret(self, statements: list[Stmt]):
@@ -71,10 +88,28 @@ class ASTInterpreter(ExprVisitor,StmtVisitor):
             raise RuntimeError(e)
     def execute(self,statement: Stmt):
         statement.accept(self)
+    def visitArrayExpr(self,expr: Array):
+        return array([self.evaluate(element) for element in expr.elements])
     def visitBlockStmt(self,stmt: Block):
-        self.executeBlock(stmt.statements,Environment({},self.environment))
+        self.executeBlock(stmt.statements,Environment({},self.environment),stmt.stmtBlock)
     def visitExpressionStmt(self,stmt: Expression):
         self.evaluate(stmt.expression)
+    def visitForeachStmt(self,stmt: Foreach):
+        collection = self.evaluate(stmt.collections)
+        for i in range(collection.__len__()):
+            if self.loopBroken:
+                self.loopBroken = False
+                break
+            if self.continueEmit:
+                self.continueEmit = False
+                continue
+            if stmt.variable:
+                self.visitVarStmt(Var(stmt.variable.name,Literal(collection[i])))
+            self.execute(stmt.body)
+    def visitBreakStmt(self,stmt: Break):
+        self.loopBroken = True
+    def visitContinue(self,stmt: Continue):
+        self.continueEmit = True
     def visitPrintStmt(self, expr: Print):
         value: object = self.evaluate(expr.expression)
         if isinstance(value,None.__class__):
@@ -152,14 +187,25 @@ class ASTInterpreter(ExprVisitor,StmtVisitor):
                     return
         elif stmt.elseBranch:
             self.execute(stmt.elseBranch)
-    def executeBlock(self,statements: list[Stmt],environment: Environment):
-        previous: Environment = deepcopy(self.environment)
+    def visitWhileStmt(self,stmt: While):
+        while self.isTruthy(self.evaluate(stmt.condition)):
+            if self.loopBroken:
+                self.loopBroken = False
+                break
+            if self.continueEmit:
+                self.continueEmit = False
+                continue
+            self.execute(stmt.body)
+    def executeBlock(self,statements: list[Stmt],environment: Environment,stmtBlock:bool = False):
         try:
-            self.environment = environment
+            if not stmtBlock:
+                previous: Environment = deepcopy(self.environment)
+                self.environment = environment
             for statement in statements:
                 self.execute(statement)
         finally:
-            self.environment = previous
+            if not stmtBlock:
+                self.environment = previous
     def evaluate(self, expr: Expr):
         return expr.accept(self)
     def isTruthy(self,obj: object):
