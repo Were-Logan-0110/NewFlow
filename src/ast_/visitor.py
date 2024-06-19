@@ -108,8 +108,10 @@ class ASTInterpreter(ExprVisitor,StmtVisitor):
             self.execute(stmt.body)
     def visitBreakStmt(self,stmt: Break):
         self.loopBroken = True
-    def visitContinue(self,stmt: Continue):
+
+    def visitContinueStmt(self, stmt: Continue):
         self.continueEmit = True
+
     def visitPrintStmt(self, expr: Print):
         value: object = self.evaluate(expr.expression)
         if isinstance(value,None.__class__):
